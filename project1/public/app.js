@@ -1,0 +1,191 @@
+// DOM elements
+const dreamForm = document.getElementById('dreamForm');
+const dreamText = document.getElementById('dreamText');
+const submitBtn = document.getElementById('submitBtn');
+const btnText = submitBtn.querySelector('.btn-text');
+const btnLoading = submitBtn.querySelector('.btn-loading');
+const dreamsContainer = document.getElementById('dreamsContainer');
+
+document.addEventListener('DOMContentLoaded', loadDreams); 
+
+dreamForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    
+    const dream = dreamText.value.trim();
+    if (!dream) return;
+
+    clearErrorMessage();
+
+    submitBtn.disabled = true;
+    btnText.style.display = 'none';
+    btnLoading.style.display = 'inline';
+
+    try {
+        const response = await fetch('/api/dreams', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ dream_text: dream }),
+        });
+
+
+        if (!response.ok) {
+            showErrorMessage(data.error || 'Failed to process your dream. Please try again.');
+            return;
+        }
+        
+        dreamText.value = '';
+        
+        await loadDreams();
+
+    } catch (error) {
+        console.error('Error:', error);
+        showErrorMessage('Network error. Please check your connection and try again.');
+    } finally {
+        submitBtn.disabled = false;
+        btnText.style.display = 'inline';
+        btnLoading.style.display = 'none';
+    }
+});
+
+// Load all dreams
+async function loadDreams() {
+    try {
+        const response = await fetch('/api/dreams');
+        if (!response.ok) {
+            throw new Error('Failed to fetch dreams');
+        }
+
+        const dreams = await response.json();
+        displayDreams(dreams);
+    } catch (error) {
+        console.error('Error:', error);
+        dreamsContainer.innerHTML = '<p class="error">Failed to load dreams. Please refresh the page.</p>';
+    }
+}
+
+function displayDreams(dreams) {
+    if (dreams.length === 0) {
+        dreamsContainer.innerHTML = '<p class="empty">No dreams yet. Start by recording your first dream!</p>';
+        return;
+    }
+
+    dreamsContainer.innerHTML = dreams.map(dream => {
+        const interpretation = escapeHtml(dream.interpretation);
+        const truncationLength = 300;
+        const shouldTruncate = interpretation.length > truncationLength;
+        const truncatedInterpretation = shouldTruncate ? interpretation.substring(0, truncationLength) + '...' : interpretation;
+
+        return `
+        <div class="dream-card" data-id="${dream.id}">
+            <div class="dream-header">
+                <span class="dream-date">${formatDate(dream.created_at)}</span>
+                <button class="delete-btn">Delete</button>
+            </div>
+            <div class="dream-text">
+                <strong>Dream:</strong> ${escapeHtml(dream.dream_text)}
+            </div>
+            <div class="interpretation">
+                <h3>💭 Interpretation</h3>
+                <div class="interpretation-text interpretation-expandable" data-full="${interpretation}" data-truncated="${truncatedInterpretation}" data-expanded="false">
+                    ${truncatedInterpretation}
+                </div>
+                ${shouldTruncate ? `<button class="read-more-btn">Read More</button>` : ''}
+            </div>
+        </div>
+    `;
+    }).join('');
+
+    dreamsContainer.querySelectorAll('.delete-btn').forEach(btn => {
+        const card = btn.closest('.dream-card');
+        btn.addEventListener('click', () => deleteDream(card.dataset.id));
+    });
+
+    dreamsContainer.querySelectorAll('.read-more-btn').forEach(btn => {
+        btn.addEventListener('click', toggleInterpretation);
+    });
+}
+
+async function deleteDream(id) {
+    if (!confirm('Are you sure you want to delete this dream?')) {
+        return;
+    }
+
+    try {
+        const response = await fetch(`/api/dreams/${id}`, {
+            method: 'DELETE',
+        });
+
+        if (!response.ok) {
+            throw new Error('Failed to delete dream');
+        }
+        
+        await loadDreams();
+    } catch (error) {
+        console.error('Error:', error);
+    }
+}
+ 
+function formatDate(dateString) {
+    const date = new Date(dateString);
+    return date.toLocaleDateString('en-US', {
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+    });
+}
+
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+function toggleInterpretation(event) {
+    event.preventDefault();
+    const btn = event.target;
+    const interpretationDiv = btn.previousElementSibling;
+    const isExpanded = interpretationDiv.dataset.expanded === 'true';
+    
+    if (isExpanded) {
+        interpretationDiv.textContent = interpretationDiv.dataset.truncated;
+        interpretationDiv.dataset.expanded = 'false';
+        btn.textContent = 'Read More';
+    } else {
+        interpretationDiv.textContent = interpretationDiv.dataset.full;
+        interpretationDiv.dataset.expanded = 'true';
+        btn.textContent = 'Read Less';
+    }
+}
+
+function showErrorMessage(message) {
+    const errorContainer = document.getElementById('errorContainer') || createErrorContainer();
+    errorContainer.innerHTML = `
+        <div class="error-alert">
+            <strong>⚠️ Error:</strong> ${escapeHtml(message)}
+            <button class="close-error">×</button>
+        </div>
+    `;
+    errorContainer.style.display = 'block';
+    errorContainer.querySelector('.close-error').addEventListener('click', clearErrorMessage);
+}
+
+function clearErrorMessage() {
+    const errorContainer = document.getElementById('errorContainer');
+    if (errorContainer) {
+        errorContainer.style.display = 'none';
+        errorContainer.innerHTML = '';
+    }
+}
+
+function createErrorContainer() {
+    const container = document.createElement('div');
+    container.id = 'errorContainer';
+    container.style.display = 'none';
+    const addDreamSection = document.querySelector('.add-dream');
+    addDreamSection.parentNode.insertBefore(container, addDreamSection);
+    return container;
+}
